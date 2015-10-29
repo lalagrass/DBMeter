@@ -6,12 +6,10 @@ import android.media.MediaRecorder;
 import android.os.AsyncTask;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
-import android.util.Log;
 import android.widget.TextView;
 
 public class MainActivity extends AppCompatActivity {
 
-    public static final String LogTag = "DBMeterLog";
     private static volatile boolean isRecording = false;
     private static final int frequency = 44100;
     private static final int channelConfiguration = AudioFormat.CHANNEL_IN_MONO;
@@ -48,37 +46,47 @@ public class MainActivity extends AppCompatActivity {
         @Override
         protected Void doInBackground(Void... params) {
             try {
-Log.i(LogTag, "RecordAudio");
                 int bufferSize = AudioRecord.getMinBufferSize(frequency,
                         channelConfiguration, audioEncoding);
-                Log.i(LogTag, "getMinBufferSize " + bufferSize);
+                if (bufferSize < frequency)
+                    bufferSize = frequency;
                 AudioRecord audioRecord = new AudioRecord(
                         MediaRecorder.AudioSource.MIC, frequency,
                         channelConfiguration, audioEncoding, bufferSize);
-                Log.i(LogTag, "AudioRecord");
-                short[] buffer = new short[bufferSize];
+                byte[] buffer = new byte[bufferSize];
+                int offset = 0;
                 audioRecord.startRecording();
-                Log.i(LogTag, "AudioRecord start");
                 while (isRecording) {
-                    int bufferReadResult = audioRecord.read(buffer, 0,
-                            bufferSize);
-                    long sum = 0;
-                    for (int i = 0; i < bufferReadResult; i+=2) {
-                        sum += (buffer[i] & 0xff) << 8 | buffer[i+1];
+                    while (offset < bufferSize) {
+                        int bufferReadResult = audioRecord.read(buffer, offset,
+                                bufferSize - offset);
+                        offset+= bufferReadResult;
                     }
-                    double amplitude = (double) (sum / (bufferSize / 2));
-                    double amplitudeDb = 20 * Math
-                            .log10(Math.abs(amplitude) / 32768);
-                    publishProgress(amplitudeDb);
+
+
+                        long sum = 0;
+                        for (int i = 0; i < bufferSize; i += 2) {
+                            sum += Math.pow((buffer[i] & 0xff) << 8 | buffer[i + 1], 2);
+                        }
+                        double amplitude = (double) (sum / (bufferSize / 2));
+                        double amplitudeDb = 20 * Math
+                                .log10(Math.abs(amplitude) / 32768);
+                        offset = 0;
+                        publishProgress(amplitudeDb);
                 }
                 audioRecord.stop();
-            } catch (Throwable t) {
-                Log.e("AudioRecord", "Recording Failed");
+            } catch (Exception ex) {
+                ex.printStackTrace();
             }
             return null;
         }
         protected void onProgressUpdate(Double... progress) {
-            statusText.setText(String.format("%.02f", progress[0]));
+            double value = progress[0];
+            if (value < 0) {
+                statusText.setText("0.0");
+            } else {
+                statusText.setText(String.format("%.01f", value));
+            }
         }
         protected void onPostExecute(Void result) {
         }
